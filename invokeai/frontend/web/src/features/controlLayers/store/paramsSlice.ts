@@ -6,6 +6,7 @@ import { deepClone } from 'common/util/deepClone';
 import { roundDownToMultiple, roundToMultiple } from 'common/util/roundDownToMultiple';
 import { isPlainObject } from 'es-toolkit';
 import { clamp } from 'es-toolkit/compat';
+import { logout } from 'features/auth/store/authSlice';
 import type { AspectRatioID, InfillMethod, ParamsState, RgbaColor } from 'features/controlLayers/store/types';
 import {
   ASPECT_RATIO_MAP,
@@ -29,6 +30,7 @@ import type {
   ParameterCLIPGEmbedModel,
   ParameterCLIPLEmbedModel,
   ParameterControlLoRAModel,
+  ParameterFluxDypePreset,
   ParameterGuidance,
   ParameterModel,
   ParameterNegativePrompt,
@@ -72,7 +74,7 @@ const slice = createSlice({
     setFluxScheduler: (state, action: PayloadAction<'euler' | 'heun' | 'lcm'>) => {
       state.fluxScheduler = action.payload;
     },
-    setFluxDypePreset: (state, action: PayloadAction<'off' | 'manual' | 'auto' | '4k'>) => {
+    setFluxDypePreset: (state, action: PayloadAction<ParameterFluxDypePreset>) => {
       state.fluxDypePreset = action.payload;
     },
     setFluxDypeScale: (state, action: PayloadAction<number>) => {
@@ -426,6 +428,12 @@ const slice = createSlice({
       }
     },
     paramsReset: (state) => resetState(state),
+  },
+  extraReducers(builder) {
+    // Reset params state on logout to prevent user data leakage when switching users
+    builder.addCase(logout, () => {
+      return getInitialParamsState();
+    });
   },
 });
 

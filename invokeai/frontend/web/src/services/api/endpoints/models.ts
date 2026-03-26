@@ -6,6 +6,7 @@ import type { operations, paths } from 'services/api/schema';
 import type {
   AnyModelConfig,
   GetHFTokenStatusResponse,
+  ModelInstallJob,
   ResetHFTokenResponse,
   SetHFTokenArg,
   SetHFTokenResponse,
@@ -66,6 +67,10 @@ type ListModelInstallsResponse =
 
 type CancelModelInstallResponse =
   paths['/api/v2/models/install/{id}']['delete']['responses']['201']['content']['application/json'];
+type PauseModelInstallResponse = ModelInstallJob;
+type ResumeModelInstallResponse = ModelInstallJob;
+type RestartFailedModelInstallResponse = ModelInstallJob;
+type RestartModelInstallFileResponse = ModelInstallJob;
 
 type PruneCompletedModelInstallsResponse =
   paths['/api/v2/models/install']['delete']['responses']['200']['content']['application/json'];
@@ -78,6 +83,25 @@ type GetHuggingFaceModelsResponse =
   paths['/api/v2/models/hugging_face']['get']['responses']['200']['content']['application/json'];
 
 type GetByAttrsArg = operations['get_model_records_by_attrs']['parameters']['query'];
+
+// Orphaned models types - manually defined since the schema hasn't been regenerated yet
+type OrphanedModelInfo = {
+  path: string;
+  absolute_path: string;
+  files: string[];
+  size_bytes: number;
+};
+
+type GetOrphanedModelsResponse = OrphanedModelInfo[];
+
+type DeleteOrphanedModelsArg = {
+  paths: string[];
+};
+
+type DeleteOrphanedModelsResponse = {
+  deleted: string[];
+  errors: Record<string, string>;
+};
 
 const modelConfigsAdapter = createEntityAdapter<AnyModelConfig, string>({
   selectId: (entity) => entity.key,
@@ -215,6 +239,18 @@ export const modelsApi = api.injectEndpoints({
       },
       serializeQueryArgs: ({ queryArgs }) => `${queryArgs.name}.${queryArgs.base}.${queryArgs.type}`,
     }),
+    getModelConfigByHash: build.query<AnyModelConfig, string>({
+      query: (hash) => buildModelsUrl(`get_by_hash?${queryString.stringify({ hash })}`),
+      providesTags: (result) => {
+        const tags: ApiTagDescription[] = [];
+
+        if (result) {
+          tags.push({ type: 'ModelConfig', id: result.key });
+        }
+
+        return tags;
+      },
+    }),
     scanFolder: build.query<ScanFolderResponse, ScanFolderArg>({
       query: (arg) => {
         const folderQueryStr = arg ? queryString.stringify(arg, {}) : '';
@@ -244,6 +280,43 @@ export const modelsApi = api.injectEndpoints({
         return {
           url: buildModelsUrl(`install/${id}`),
           method: 'DELETE',
+        };
+      },
+      invalidatesTags: ['ModelInstalls'],
+    }),
+    pauseModelInstall: build.mutation<PauseModelInstallResponse, number>({
+      query: (id) => {
+        return {
+          url: buildModelsUrl(`install/${id}/pause`),
+          method: 'POST',
+        };
+      },
+      invalidatesTags: ['ModelInstalls'],
+    }),
+    resumeModelInstall: build.mutation<ResumeModelInstallResponse, number>({
+      query: (id) => {
+        return {
+          url: buildModelsUrl(`install/${id}/resume`),
+          method: 'POST',
+        };
+      },
+      invalidatesTags: ['ModelInstalls'],
+    }),
+    restartFailedModelInstall: build.mutation<RestartFailedModelInstallResponse, number>({
+      query: (id) => {
+        return {
+          url: buildModelsUrl(`install/${id}/restart_failed`),
+          method: 'POST',
+        };
+      },
+      invalidatesTags: ['ModelInstalls'],
+    }),
+    restartModelInstallFile: build.mutation<RestartModelInstallFileResponse, { id: number; file_source: string }>({
+      query: ({ id, file_source }) => {
+        return {
+          url: buildModelsUrl(`install/${id}/restart_file`),
+          method: 'POST',
+          body: file_source,
         };
       },
       invalidatesTags: ['ModelInstalls'],
@@ -358,6 +431,21 @@ export const modelsApi = api.injectEndpoints({
         }
       },
     }),
+    getOrphanedModels: build.query<GetOrphanedModelsResponse, void>({
+      query: () => ({
+        url: buildModelsUrl('sync/orphaned'),
+        method: 'GET',
+      }),
+      providesTags: ['OrphanedModels'],
+    }),
+    deleteOrphanedModels: build.mutation<DeleteOrphanedModelsResponse, DeleteOrphanedModelsArg>({
+      query: (arg) => ({
+        url: buildModelsUrl('sync/orphaned'),
+        method: 'DELETE',
+        body: arg,
+      }),
+      invalidatesTags: ['OrphanedModels'],
+    }),
   }),
 });
 
@@ -376,6 +464,10 @@ export const {
   useLazyGetHuggingFaceModelsQuery,
   useListModelInstallsQuery,
   useCancelModelInstallMutation,
+  usePauseModelInstallMutation,
+  useResumeModelInstallMutation,
+  useRestartFailedModelInstallMutation,
+  useRestartModelInstallFileMutation,
   usePruneCompletedModelInstallsMutation,
   useGetStarterModelsQuery,
   useGetHFTokenStatusQuery,
@@ -383,6 +475,8 @@ export const {
   useResetHFTokenMutation,
   useEmptyModelCacheMutation,
   useReidentifyModelMutation,
+  useGetOrphanedModelsQuery,
+  useDeleteOrphanedModelsMutation,
 } = modelsApi;
 
 export const selectModelConfigsQuery = modelsApi.endpoints.getModelConfigs.select();
